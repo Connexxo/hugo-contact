@@ -37,6 +37,13 @@ This is a small, self-hosted Go application that acts as a drop-in replacement f
 </form>
 ```
 
+## Building and Running Locally
+
+```sh
+go build -o hugo-contact .
+./hugo-contact
+```
+
 ## Running with Docker
 
 ```sh
@@ -53,9 +60,16 @@ CORS_ALLOW_ORIGIN=https://yourhugo.site \
 docker run -p 8080:8080 --env-file .env hugo-contact
 ```
 
+## Building and Pushing to Docker Hub
+
+```sh
+docker build -t yourrepository/hugo-contact:latest .
+docker push yourrepository/hugo-contact:latest
+```
+
 ## License
 
 MIT
 
 ---
-Maintained by [@gottafixthat](https://mstdn.social/@gottafixthat)
+Maintained by [Marc Lewis](https://marclewis.com) - [@gottafixthat](https://mstdn.social/@gottafixthat)
