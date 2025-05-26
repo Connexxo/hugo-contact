@@ -28,7 +28,11 @@ func sendEmail(name, email, message string) error {
 }
 
 func contactHandler(w http.ResponseWriter, r *http.Request) {
-	setCORSHeaders(w, r)
+	if !checkAndSetCORSHeaders(w, r) {
+		logger.Warn("Blocked request due to invalid origin", slog.String("origin", r.Header.Get("Origin")), slog.String("ip", r.RemoteAddr))
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
@@ -76,18 +80,25 @@ func contactHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
+func checkAndSetCORSHeaders(w http.ResponseWriter, r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	allowedOrigin := os.Getenv("CORS_ALLOW_ORIGIN")
 	if allowedOrigin == "" {
 		allowedOrigin = "*"
 	}
+
+	// Block request if origin is not allowed
+	if origin != "" && allowedOrigin != "*" && origin != allowedOrigin {
+		return false
+	}
+
 	if origin != "" {
-		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 	}
+	return true
 }
 
 func main() {
