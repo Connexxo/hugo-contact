@@ -1,14 +1,50 @@
 package main
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/smtp"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 )
 
 var logger *slog.Logger
+var tokenSecret []byte
+
+func generateToken(ts int64) string {
+	h := hmac.New(sha256.New, tokenSecret)
+	h.Write([]byte(strconv.FormatInt(ts, 10)))
+	mac := h.Sum(nil)
+	return fmt.Sprintf("%d:%s", ts, base64.StdEncoding.EncodeToString(mac))
+}
+
+func validateToken(token string) bool {
+	parts := strings.SplitN(token, ":", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	ts, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return false
+	}
+
+	now := time.Now().Unix()
+	if ts > now || now-ts < 2 || now-ts > 900 {
+		return false // too new or too old
+	}
+
+	h := hmac.New(sha256.New, tokenSecret)
+	h.Write([]byte(parts[0]))
+	expected := base64.StdEncoding.EncodeToString(h.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(parts[1]))
+}
 
 func sendEmail(name, email, message string) error {
 	smtpHost := os.Getenv("SMTP_HOST")
@@ -47,12 +83,22 @@ func contactHandler(w http.ResponseWriter, r *http.Request) {
 
 	_ = r.ParseForm()
 
+	// check the token that was injected by the form
+	token := r.FormValue("_ts_token")
+	if !validateToken(token) {
+		logger.Warn("Invalid or missing timestamp token", slog.String("ip", r.RemoteAddr))
+		http.Error(w, "Invalid token", http.StatusBadRequest)
+		return
+	}
+
+	// honeypot fields
 	if r.FormValue("_gotcha") != "" || r.FormValue("nickname") != "" {
 		logger.Info("Honeypot field triggered — likely a bot", slog.String("ip", r.RemoteAddr))
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
+	// real fields
 	name := r.FormValue("name")
 	email := r.FormValue("email")
 	message := r.FormValue("message")
@@ -80,6 +126,24 @@ func contactHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func jsTokenHandler(w http.ResponseWriter, r *http.Request) {
+	ts := time.Now().Unix()
+	token := generateToken(ts)
+
+	w.Header().Set("Content-Type", "application/javascript")
+	w.Header().Set("Cache-Control", "no-store")
+	script := fmt.Sprintf(`(function () {
+	const token = "%s";
+	const input = document.createElement("input");
+	input.type = "hidden";
+	input.name = "_ts_token";
+	input.value = token;
+	const forms = document.querySelectorAll("form");
+	forms.forEach(form => form.appendChild(input.cloneNode(true)));
+})();`, token)
+	_, _ = w.Write([]byte(script))
+}
+
 func checkAndSetCORSHeaders(w http.ResponseWriter, r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	allowedOrigin := os.Getenv("CORS_ALLOW_ORIGIN")
@@ -104,8 +168,28 @@ func checkAndSetCORSHeaders(w http.ResponseWriter, r *http.Request) bool {
 func main() {
 	logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
+	// if there is an environmental variable for the token secret, use that, useful for clustering
+	envSecret := os.Getenv("TOKEN_SECRET")
+	if envSecret != "" {
+		tokenSecret = []byte(envSecret)
+		if len(tokenSecret) < 16 {
+			logger.Error("TOKEN_SECRET must be at least 16 bytes")
+			os.Exit(1)
+		}
+	} else {
+		// no environmental variable, generate a token
+		tokenSecret = make([]byte, 32)
+		if _, err := rand.Read(tokenSecret); err != nil {
+			logger.Error("Failed to generate random token secret", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+		logger.Info("Generated ephemeral TOKEN_SECRET for this runtime")
+	}
+
 	// /f/contact endpoint is the Formspree-compatible POST endpoint
 	http.HandleFunc("/f/contact", contactHandler)
+	// /form-token.js returns the anti-spam JavaScript for the form
+	http.HandleFunc("/form-token.js", jsTokenHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {

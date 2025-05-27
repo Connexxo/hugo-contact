@@ -1,6 +1,6 @@
 # hugo-contact
 
-This is a small, self-hosted Go application that acts as a drop-in replacement for services like Formspree or Airform. It accepts form submissions from static sites (like Hugo) and sends them to a configured SMTP endpoint.
+This is a small, self-hosted Go application that acts as a (mostly) drop-in replacement for services like Formspree or Airform. It accepts form submissions from static sites (like Hugo) and sends them to a configured SMTP endpoint.
 
 ## Features
 
@@ -11,31 +11,47 @@ This is a small, self-hosted Go application that acts as a drop-in replacement f
 - Environment-configurable SMTP (Zoho, Gmail, Mailgun, etc.)
 - Optional redirect with `_next` field
 - Lightweight and Docker-ready
-- No external dependencies outside of Go's standard library
+- No external dependencies beyond Go's standard library
+- A small, self-contained JavaScript script (required) to prevent spam-bots
 
 ## Environment Variables
 
-| Variable             | Description                       |
-|----------------------|-----------------------------------|
-| `SMTP_HOST`          | SMTP server host (e.g., `smtp.example.com`) |
-| `SMTP_PORT`          | SMTP port (usually `587`)         |
-| `SMTP_USERNAME`      | SMTP login username               |
-| `SMTP_PASSWORD`      | SMTP login password or app key    |
-| `RECIPIENT_EMAIL`    | Email address to receive form submissions |
-| `PORT`               | Port to run the server on (default: `8080`) |
-| `CORS_ALLOW_ORIGIN`  | CORS allowed origin (default: `*`) |
+| Variable            | Description                                                                                                                                 |
+|---------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| `SMTP_HOST`         | SMTP server host (e.g., `smtp.example.com`)                                                                                                 |
+| `SMTP_PORT`         | SMTP port (usually `587`)                                                                                                                   |
+| `SMTP_USERNAME`     | SMTP login username                                                                                                                         |
+| `SMTP_PASSWORD`     | SMTP login password or app key                                                                                                              |
+| `RECIPIENT_EMAIL`   | Email address to receive form submissions                                                                                                   |
+| `PORT`              | Port to run the server on (default: `8080`)                                                                                                 |
+| `CORS_ALLOW_ORIGIN` | CORS allowed origin (default: `*`)                                                                                                          |
+| `TOKEN_SECRET`      | (optional) a token secret to use for signing the generated anti-spam token, if not supplied an ephemeral token will be generated on startup |
 
 ## Example HTML Form
 
+Note that the script needs to be *only* on the pages that have forms and not loaded on the entire site, and should be loaded after the form. 
+This script will load a signed timestamp-based token that will need to be included in the form that needs to be included in the submission. 
+It expires in 15 minutes. This could create some false positives, for example, if a visitor went to the site and took more than 15 minutes to make their comment.  
+The time range can be adjusted in the code, or you could warn them on the page that the form expires in 15 minutes. 
+It also doesn't allow it to be posted within 2 seconds, as that will most likely be a bot.   
+
 ```html
-<form action="https://yourdomain.com/f/contact" method="POST">
+<form action="https://contact.yourdomain.com/f/contact" method="POST">
   <input type="text" name="name" required>
   <input type="email" name="email" required>
   <textarea name="message" required></textarea>
   <input type="text" name="_gotcha" style="display:none">
   <button type="submit">Send</button>
 </form>
+<script>
+    const s = document.createElement('script');
+    s.src = 'https://contact.yourdomain.com/form-token.js';
+    s.defer = true;
+    document.body.appendChild(s);
+</script>
 ```
+
+This will load the form, then load the script. The script will append the signed token to the form to include it with the submission.
 
 ## Building and Running Locally
 
