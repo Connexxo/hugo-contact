@@ -46,6 +46,18 @@ func validateToken(token string) bool {
 	return hmac.Equal([]byte(expected), []byte(parts[1]))
 }
 
+func getClientIP(r *http.Request) string {
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff != "" {
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if rip := r.Header.Get("X-Real-IP"); rip != "" {
+		return rip
+	}
+	return r.RemoteAddr
+}
+
 func sendEmail(name, email, message string) error {
 	smtpHost := os.Getenv("SMTP_HOST")
 	smtpPort := os.Getenv("SMTP_PORT")
@@ -64,8 +76,10 @@ func sendEmail(name, email, message string) error {
 }
 
 func contactHandler(w http.ResponseWriter, r *http.Request) {
+	ip := getClientIP(r)
+
 	if !checkAndSetCORSHeaders(w, r) {
-		logger.Warn("Blocked request due to invalid origin", slog.String("origin", r.Header.Get("Origin")), slog.String("ip", r.RemoteAddr))
+		logger.Warn("Blocked request due to invalid origin", slog.String("origin", r.Header.Get("Origin")), slog.String("ip", ip))
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -86,14 +100,14 @@ func contactHandler(w http.ResponseWriter, r *http.Request) {
 	// check the token that was injected by the form
 	token := r.FormValue("_ts_token")
 	if !validateToken(token) {
-		logger.Warn("Invalid or missing timestamp token", slog.String("ip", r.RemoteAddr))
+		logger.Warn("Invalid or missing timestamp token", slog.String("ip", ip))
 		http.Error(w, "Invalid token", http.StatusBadRequest)
 		return
 	}
 
 	// honeypot fields
 	if r.FormValue("_gotcha") != "" || r.FormValue("nickname") != "" {
-		logger.Info("Honeypot field triggered — likely a bot", slog.String("ip", r.RemoteAddr))
+		logger.Info("Honeypot field triggered — likely a bot", slog.String("ip", ip))
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -105,18 +119,18 @@ func contactHandler(w http.ResponseWriter, r *http.Request) {
 
 	if name == "" || email == "" || message == "" {
 		http.Error(w, "Missing required fields", http.StatusBadRequest)
-		logger.Warn("Missing required fields", slog.String("ip", r.RemoteAddr))
+		logger.Warn("Missing required fields", slog.String("ip", ip))
 		return
 	}
 
 	err := sendEmail(name, email, message)
 	if err != nil {
 		http.Error(w, "Failed to send message", http.StatusInternalServerError)
-		logger.Error("Failed to send email", slog.String("error", err.Error()), slog.String("ip", r.RemoteAddr))
+		logger.Error("Failed to send email", slog.String("error", err.Error()), slog.String("ip", ip))
 		return
 	}
 
-	logger.Info("Email sent successfully", slog.String("name", name), slog.String("email", email), slog.String("ip", r.RemoteAddr))
+	logger.Info("Email sent successfully", slog.String("name", name), slog.String("email", email), slog.String("ip", ip))
 
 	if next := r.FormValue("_next"); next != "" {
 		http.Redirect(w, r, next, http.StatusSeeOther)
