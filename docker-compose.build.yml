@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  hugo-contact:
+    build: .
+    container_name: hugo-contact-prod
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    restart: unless-stopped
+    user: "1000:1000"  # Run as non-root user
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/form-token.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - hugo-contact-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  hugo-contact-network:
+    driver: bridge

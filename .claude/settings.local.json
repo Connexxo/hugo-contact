@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(timeout:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(chmod:*)",
+      "Bash(./build-for-server.sh:*)",
+      "Bash(docker build:*)",
+      "Bash(touch:*)",
+      "Bash(ls:*)",
+      "Bash(go mod:*)",
+      "Bash(cat:*)",
+      "Bash(cp:*)",
+      "Bash(git remote remove:*)"
+    ],
+    "deny": []
+  }
+}

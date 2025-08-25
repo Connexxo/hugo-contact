@@ -5,27 +5,31 @@ This is a small, self-hosted Go application that acts as a (mostly) drop-in repl
 ## Features
 
 - Formspree-compatible POST endpoint (`/f/contact`)
+- Health check endpoint (`/health`) for monitoring
+- Anti-spam JavaScript token system (`/form-token.js`)
 - Honeypot spam protection
-- CORS support
+- CORS support for multiple domains
 - Structured JSON logging using Go's `slog` package
 - Environment-configurable SMTP (Zoho, Gmail, Mailgun, etc.)
+- Optional custom subject field (defaults to "Contact Form Submission")
 - Optional redirect with `_next` field
 - Lightweight and Docker-ready
 - No external dependencies beyond Go's standard library
-- A small, self-contained JavaScript script (required) to prevent spam-bots
+- Complete deployment and management scripts included
 
 ## Environment Variables
 
-| Variable            | Description                                                                                                                                 |
-|---------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
-| `SMTP_HOST`         | SMTP server host (e.g., `smtp.example.com`)                                                                                                 |
-| `SMTP_PORT`         | SMTP port (usually `587`)                                                                                                                   |
-| `SMTP_USERNAME`     | SMTP login username                                                                                                                         |
-| `SMTP_PASSWORD`     | SMTP login password or app key                                                                                                              |
-| `RECIPIENT_EMAIL`   | Email address to receive form submissions                                                                                                   |
-| `PORT`              | Port to run the server on (default: `8080`)                                                                                                 |
-| `CORS_ALLOW_ORIGIN` | CORS allowed origin (default: `*`)                                                                                                          |
-| `TOKEN_SECRET`      | (optional) a token secret to use for signing the generated anti-spam token, if not supplied an ephemeral token will be generated on startup |
+| Variable             | Description                                                                                                                                 |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| `SMTP_HOST`          | SMTP server host (e.g., `smtp.example.com`)                                                                                                 |
+| `SMTP_PORT`          | SMTP port (usually `587`)                                                                                                                   |
+| `SMTP_USERNAME`      | SMTP login username                                                                                                                         |
+| `SMTP_PASSWORD`      | SMTP login password or app key                                                                                                              |
+| `SENDER_EMAIL`       | Email address to use as sender (can be different from SMTP_USERNAME)                                                                       |
+| `RECIPIENT_EMAIL`    | Email address to receive form submissions                                                                                                   |
+| `PORT`               | Port to run the server on (default: `8080`)                                                                                                 |
+| `CORS_ALLOW_ORIGINS` | CORS allowed origins, comma-separated (e.g., `https://site1.com,https://site2.com`)                                                       |
+| `TOKEN_SECRET`       | (optional) a token secret to use for signing the generated anti-spam token, if not supplied an ephemeral token will be generated on startup |
 
 ## Example HTML Form
 
@@ -39,6 +43,7 @@ It also doesn't allow it to be posted within 2 seconds, as that will most likely
 <form action="https://contact.yourdomain.com/f/contact" method="POST">
   <input type="text" name="name" required>
   <input type="email" name="email" required>
+  <input type="text" name="subject" placeholder="Subject (optional)">
   <textarea name="message" required></textarea>
   <input type="text" name="_gotcha" style="display:none">
   <button type="submit">Send</button>
@@ -72,7 +77,7 @@ SMTP_USERNAME=your@domain.com \
 SMTP_PASSWORD=yourpassword \
 RECIPIENT_EMAIL=you@domain.com \
 PORT=8080 \
-CORS_ALLOW_ORIGIN=https://yourhugo.site \
+CORS_ALLOW_ORIGINS=https://yourhugo.site \
 docker run -p 8080:8080 --env-file .env hugo-contact
 ```
 
@@ -82,6 +87,38 @@ docker run -p 8080:8080 --env-file .env hugo-contact
 docker build -t yourrepository/hugo-contact:latest .
 docker push yourrepository/hugo-contact:latest
 ```
+
+## Deployment and Management
+
+For production deployment, this project includes comprehensive deployment tools:
+
+- `manage-service.sh` - Complete service management (start/stop/restart/update/logs/status)
+- `check-status.sh` - Health monitoring script
+- `status.php` - Web-based status monitoring page
+- `DEPLOYMENT-CHECKLIST.md` - Complete deployment guide
+- `DOCKER-OPERATIONS-GUIDE.md` - Detailed operations manual
+
+### Quick Deployment
+```bash
+# Upload files to server, then:
+chmod +x manage-service.sh check-status.sh
+cp .env.server .env  # Edit with your settings
+./manage-service.sh start
+```
+
+### Service Management
+```bash
+./manage-service.sh status   # Check service status
+./manage-service.sh logs     # View logs
+./manage-service.sh update   # Update service
+./check-status.sh            # Quick health check
+```
+
+## API Endpoints
+
+- `POST /f/contact` - Form submission endpoint
+- `GET /health` - Health check (returns JSON status)
+- `GET /form-token.js` - Anti-spam token JavaScript
 
 ## License
 

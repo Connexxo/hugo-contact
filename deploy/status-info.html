@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Contact Form Service Info</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .status-card {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .info-section {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            background: #f8f9fa;
+        }
+        .endpoint {
+            background: #e3f2fd;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+        }
+        .test-link {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 8px 15px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 5px;
+        }
+        .test-link:hover {
+            background: #0056b3;
+        }
+        .instructions {
+            background: #d1ecf1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <div class="status-card">
+        <h1>🔍 Contact Form Service Information</h1>
+        
+        <div class="info-section">
+            <h3>📡 Service Endpoints</h3>
+            <p>Your contact form service is running on:</p>
+            
+            <div class="endpoint">
+                🏥 Health Check: http://contact.connexxo.com:8080/health
+            </div>
+            
+            <div class="endpoint">
+                🎫 Token Generator: http://contact.connexxo.com:8080/form-token.js
+            </div>
+            
+            <div class="endpoint">
+                📬 Contact Form: http://contact.connexxo.com:8080/f/contact
+            </div>
+        </div>
+        
+        <div class="info-section">
+            <h3>🧪 Manual Testing</h3>
+            <p>Click these links to test your service endpoints:</p>
+            
+            <a href="http://contact.connexxo.com:8080/health" target="_blank" class="test-link">
+                Test Health Check
+            </a>
+            
+            <a href="http://contact.connexxo.com:8080/form-token.js" target="_blank" class="test-link">
+                Test Token Generator
+            </a>
+        </div>
+        
+        <div class="instructions">
+            <h3>🚀 For Your Hugo Site</h3>
+            <p>Add these to your Hugo templates:</p>
+            
+            <strong>JavaScript (before closing &lt;/body&gt; tag):</strong><br>
+            <code>&lt;script src="http://contact.connexxo.com:8080/form-token.js"&gt;&lt;/script&gt;</code>
+            
+            <br><br>
+            
+            <strong>Form action:</strong><br>
+            <code>&lt;form action="http://contact.connexxo.com:8080/f/contact" method="POST"&gt;</code>
+        </div>
+        
+        <div class="info-section">
+            <h3>🛠️ Server Management</h3>
+            <p>SSH into your server and use these commands:</p>
+            
+            <div class="endpoint">
+                ./manage-service.sh status  # Check service status
+            </div>
+            
+            <div class="endpoint">
+                ./manage-service.sh logs    # View service logs
+            </div>
+            
+            <div class="endpoint">
+                ./check-status.sh          # Quick status check
+            </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 30px; color: #666;">
+            <small>Last updated: Auto-generated on deployment</small>
+        </div>
+    </div>
+</body>
+</html>
