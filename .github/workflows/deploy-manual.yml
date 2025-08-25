@@ -1,0 +1,274 @@
+name: Manual Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment Environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        default: 'main'
+        type: string
+      skip_tests:
+        description: 'Skip tests before deployment'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DOCKER_IMAGE: hugo-contact
+  CONTAINER_NAME: hugo-contact-${{ inputs.environment }}
+
+jobs:
+  test:
+    name: Test Application
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_tests }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      
+      - name: Install dependencies
+        run: go mod download
+      
+      - name: Run tests
+        run: go test ./... -v
+      
+      - name: Build application
+        run: go build -v ./...
+
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: ${{ always() && (needs.test.result == 'success' || inputs.skip_tests) }}
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+      
+      - name: Display deployment info
+        run: |
+          echo "🚀 Deploying to: ${{ inputs.environment }}"
+          echo "📦 Branch: ${{ inputs.branch }}"
+          echo "🧪 Tests skipped: ${{ inputs.skip_tests }}"
+          echo "⏰ Deployment time: $(date)"
+      
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+      
+      - name: Create deployment package
+        run: |
+          mkdir -p deploy-package
+          cp main.go Dockerfile go.mod go.sum docker-compose.build.yml manage-service.sh deploy-package/
+          
+          # Add environment-specific configs if they exist
+          if [ -f ".env.${{ inputs.environment }}" ]; then
+            cp ".env.${{ inputs.environment }}" deploy-package/.env.template
+          fi
+          
+          tar -czf deploy-package.tar.gz deploy-package/
+      
+      - name: Create deployment script
+        run: |
+          cat > deploy.sh << 'SCRIPT'
+          #!/bin/bash
+          set -e
+          
+          ENVIRONMENT="${1:-production}"
+          DEPLOY_PATH="${2:-~/hugo-contact}"
+          
+          echo "🚀 Starting deployment for environment: $ENVIRONMENT"
+          
+          # Navigate to deployment directory
+          cd "$DEPLOY_PATH"
+          
+          # Backup current deployment
+          if [ -d "backup" ]; then
+            rm -rf backup.old
+            mv backup backup.old
+          fi
+          mkdir -p backup
+          cp -r *.go go.* Dockerfile docker-compose.*.yml backup/ 2>/dev/null || true
+          
+          # Extract new deployment
+          tar -xzf deploy-package.tar.gz
+          mv deploy-package/* .
+          rm -rf deploy-package deploy-package.tar.gz
+          
+          # Create environment file
+          if [ "$ENVIRONMENT" = "production" ]; then
+            cat > .env << 'EOF'
+          # SMTP Configuration
+          SMTP_HOST=mail23.hi7.de
+          SMTP_PORT=587
+          SMTP_USERNAME=k000490-017
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          SENDER_EMAIL=system@connexxo.com
+          RECIPIENT_EMAIL=info@connexxo.com
+          
+          # CORS Configuration
+          CORS_ALLOW_ORIGINS=http://localhost:1313,https://v2.connexxo.com,https://connexxo.com,http://contact.connexxo.com:8080
+          
+          # Security Token
+          TOKEN_SECRET=${{ secrets.TOKEN_SECRET }}
+          
+          # Server Configuration
+          PORT=8080
+          EOF
+          else
+            # Staging environment
+            cat > .env << 'EOF'
+          # SMTP Configuration (Staging)
+          SMTP_HOST=mail23.hi7.de
+          SMTP_PORT=587
+          SMTP_USERNAME=k000490-017
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          SENDER_EMAIL=staging@connexxo.com
+          RECIPIENT_EMAIL=test@connexxo.com
+          
+          # CORS Configuration (Staging)
+          CORS_ALLOW_ORIGINS=http://localhost:1313,https://staging.connexxo.com
+          
+          # Security Token
+          TOKEN_SECRET=${{ secrets.TOKEN_SECRET_STAGING }}
+          
+          # Server Configuration
+          PORT=8081
+          EOF
+          fi
+          
+          # Make scripts executable
+          chmod +x manage-service.sh
+          
+          # Update container name for environment
+          export CONTAINER_NAME="hugo-contact-${ENVIRONMENT}"
+          
+          # Stop existing container
+          docker-compose -f docker-compose.build.yml down || true
+          
+          # Build new image with cache
+          docker-compose -f docker-compose.build.yml build
+          
+          # Start new container
+          docker-compose -f docker-compose.build.yml up -d
+          
+          # Health check with rollback
+          sleep 10
+          max_attempts=30
+          attempt=1
+          health_port=$([ "$ENVIRONMENT" = "production" ] && echo "8080" || echo "8081")
+          
+          while [ $attempt -le $max_attempts ]; do
+            if curl -f -s "http://localhost:${health_port}/health" > /dev/null 2>&1; then
+              echo "✅ Service is healthy"
+              rm -rf backup.old
+              break
+            fi
+            echo "⏳ Waiting for service (attempt $attempt/$max_attempts)..."
+            sleep 2
+            ((attempt++))
+          done
+          
+          if [ $attempt -gt $max_attempts ]; then
+            echo "❌ Service failed - rolling back"
+            docker-compose -f docker-compose.build.yml down
+            cp -r backup/* .
+            docker-compose -f docker-compose.build.yml up -d
+            exit 1
+          fi
+          
+          # Clean up
+          docker image prune -f
+          echo "🎉 Deployment to $ENVIRONMENT successful!"
+          SCRIPT
+          
+          chmod +x deploy.sh
+      
+      - name: Transfer files to server
+        run: |
+          scp -P ${{ secrets.SSH_PORT }} -i ~/.ssh/id_rsa \
+            deploy-package.tar.gz deploy.sh \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/
+      
+      - name: Deploy on server
+        run: |
+          ssh -p ${{ secrets.SSH_PORT }} -i ~/.ssh/id_rsa \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "cd ${{ secrets.DEPLOY_PATH }} && ./deploy.sh ${{ inputs.environment }} ${{ secrets.DEPLOY_PATH }}"
+      
+      - name: Verify deployment
+        run: |
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            health_port="8080"
+          else
+            health_port="8081"
+          fi
+          
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SSH_HOST }}:${health_port}/health)
+          if [ "$response" = "200" ]; then
+            echo "✅ Deployment verified - service is responding"
+          else
+            echo "❌ Deployment verification failed - HTTP status: $response"
+            exit 1
+          fi
+      
+      - name: Clean up
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa deploy.sh
+
+  notify:
+    name: Deployment Notification
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+    
+    steps:
+      - name: Send success notification
+        if: ${{ needs.deploy.result == 'success' }}
+        run: |
+          echo "✅ Manual deployment successful"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Branch: ${{ inputs.branch }}"
+          echo "Time: $(date)"
+          # Add notification service integration here
+      
+      - name: Send failure notification
+        if: ${{ needs.deploy.result == 'failure' }}
+        run: |
+          echo "❌ Manual deployment failed"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Branch: ${{ inputs.branch }}"
+          echo "Time: $(date)"
+          # Add notification service integration here
