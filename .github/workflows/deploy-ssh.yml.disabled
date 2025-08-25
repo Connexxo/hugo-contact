@@ -1,0 +1,188 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - 'docs/**'
+
+env:
+  DOCKER_IMAGE: hugo-contact
+  CONTAINER_NAME: hugo-contact-prod
+
+jobs:
+  test:
+    name: Test Application
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      
+      - name: Install dependencies
+        run: go mod download
+      
+      - name: Run tests
+        run: go test ./... -v
+      
+      - name: Build application
+        run: go build -v ./...
+
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          SSH_PORT="${{ secrets.SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh-keyscan -H -p ${SSH_PORT} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+      
+      - name: Create deployment package
+        run: |
+          mkdir -p deploy-package
+          cp main.go Dockerfile go.mod go.sum docker-compose.build.yml manage-service.sh deploy-package/
+          tar -czf deploy-package.tar.gz deploy-package/
+      
+      - name: Transfer files to server
+        run: |
+          SSH_PORT="${{ secrets.SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          scp -P ${SSH_PORT} -i ~/.ssh/id_rsa \
+            deploy-package.tar.gz \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/
+      
+      - name: Deploy on server
+        run: |
+          SSH_PORT="${{ secrets.SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh -p ${SSH_PORT} -i ~/.ssh/id_rsa \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'ENDSSH'
+          set -e
+          
+          # Navigate to deployment directory
+          cd ${{ secrets.DEPLOY_PATH }}
+          
+          # Extract deployment package
+          tar -xzf deploy-package.tar.gz
+          mv deploy-package/* .
+          rm -rf deploy-package deploy-package.tar.gz
+          
+          # Create .env file with secrets
+          cat > .env << 'EOF'
+          # SMTP Configuration
+          SMTP_HOST=mail23.hi7.de
+          SMTP_PORT=587
+          SMTP_USERNAME=k000490-017
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          SENDER_EMAIL=system@connexxo.com
+          RECIPIENT_EMAIL=info@connexxo.com
+          
+          # CORS Configuration
+          CORS_ALLOW_ORIGINS=http://localhost:1313,https://v2.connexxo.com,https://connexxo.com,http://contact.connexxo.com:8080
+          
+          # Security Token
+          TOKEN_SECRET=${{ secrets.TOKEN_SECRET }}
+          
+          # Server Configuration
+          PORT=8080
+          EOF
+          
+          # Make scripts executable
+          chmod +x manage-service.sh
+          
+          # Stop existing container (if running)
+          docker-compose -f docker-compose.build.yml down || true
+          
+          # Build new image
+          docker-compose -f docker-compose.build.yml build --no-cache
+          
+          # Start new container
+          docker-compose -f docker-compose.build.yml up -d
+          
+          # Wait for service to be healthy
+          sleep 10
+          
+          # Health check
+          max_attempts=30
+          attempt=1
+          while [ $attempt -le $max_attempts ]; do
+            if curl -f -s http://localhost:8080/health > /dev/null 2>&1; then
+              echo "✅ Service is healthy"
+              break
+            fi
+            echo "⏳ Waiting for service to be healthy (attempt $attempt/$max_attempts)..."
+            sleep 2
+            ((attempt++))
+          done
+          
+          if [ $attempt -gt $max_attempts ]; then
+            echo "❌ Service failed to become healthy"
+            docker-compose -f docker-compose.build.yml logs --tail=50
+            exit 1
+          fi
+          
+          # Clean up old Docker images
+          docker image prune -f
+          
+          echo "🎉 Deployment successful!"
+          ENDSSH
+      
+      - name: Verify deployment
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SSH_HOST }}:8080/health)
+          if [ "$response" = "200" ]; then
+            echo "✅ Deployment verified - service is responding"
+          else
+            echo "❌ Deployment verification failed - HTTP status: $response"
+            exit 1
+          fi
+      
+      - name: Clean up SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa
+
+  notify:
+    name: Send Notification
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+    
+    steps:
+      - name: Send success notification
+        if: ${{ needs.deploy.result == 'success' }}
+        run: |
+          echo "✅ Deployment successful to production server"
+          # Add your notification service here (Slack, Discord, email, etc.)
+      
+      - name: Send failure notification
+        if: ${{ needs.deploy.result == 'failure' }}
+        run: |
+          echo "❌ Deployment failed to production server"
+          # Add your notification service here (Slack, Discord, email, etc.)

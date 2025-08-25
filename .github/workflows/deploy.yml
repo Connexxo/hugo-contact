@@ -1,4 +1,4 @@
-name: Deploy to Production
+name: Deploy via FTP
 
 on:
   push:
@@ -46,7 +46,7 @@ jobs:
         run: go build -v ./...
 
   deploy:
-    name: Deploy to Server
+    name: Deploy to Server via FTP
     runs-on: ubuntu-latest
     needs: test
     
@@ -54,47 +54,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Setup SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          SSH_PORT="${{ secrets.SSH_PORT }}"
-          SSH_PORT="${SSH_PORT:-22}"
-          ssh-keyscan -H -p ${SSH_PORT} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
-      
       - name: Create deployment package
         run: |
           mkdir -p deploy-package
-          cp main.go Dockerfile go.mod go.sum docker-compose.build.yml manage-service.sh deploy-package/
-          tar -czf deploy-package.tar.gz deploy-package/
-      
-      - name: Transfer files to server
-        run: |
-          SSH_PORT="${{ secrets.SSH_PORT }}"
-          SSH_PORT="${SSH_PORT:-22}"
-          scp -P ${SSH_PORT} -i ~/.ssh/id_rsa \
-            deploy-package.tar.gz \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/
-      
-      - name: Deploy on server
-        run: |
-          SSH_PORT="${{ secrets.SSH_PORT }}"
-          SSH_PORT="${SSH_PORT:-22}"
-          ssh -p ${SSH_PORT} -i ~/.ssh/id_rsa \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'ENDSSH'
-          set -e
           
-          # Navigate to deployment directory
-          cd ${{ secrets.DEPLOY_PATH }}
+          # Copy essential files
+          cp main.go Dockerfile go.mod go.sum docker-compose.build.yml deploy-package/
+          cp manage-service.sh deploy-package/
           
-          # Extract deployment package
-          tar -xzf deploy-package.tar.gz
-          mv deploy-package/* .
-          rm -rf deploy-package deploy-package.tar.gz
+          # Copy deployment script
+          cp scripts/deploy.sh deploy-package/
+          chmod +x deploy-package/manage-service.sh deploy-package/deploy.sh
           
-          # Create .env file with secrets
-          cat > .env << 'EOF'
+          # Create .env file with production settings
+          cat > deploy-package/.env << 'EOF'
           # SMTP Configuration
           SMTP_HOST=mail23.hi7.de
           SMTP_PORT=587
@@ -113,60 +86,47 @@ jobs:
           PORT=8080
           EOF
           
-          # Make scripts executable
-          chmod +x manage-service.sh
+          # Create deployment instructions
+          cat > deploy-package/DEPLOY-INSTRUCTIONS.txt << 'EOF'
+          Hugo Contact Form - FTP Deployment Instructions
           
-          # Stop existing container (if running)
-          docker-compose -f docker-compose.build.yml down || true
+          1. All files have been uploaded to your server
+          2. SSH into your server and navigate to the deployment directory
+          3. Run the deployment script:
+             ./deploy.sh production
           
-          # Build new image
-          docker-compose -f docker-compose.build.yml build --no-cache
+          4. Check service status:
+             ./manage-service.sh status
           
-          # Start new container
-          docker-compose -f docker-compose.build.yml up -d
+          5. View logs if needed:
+             ./manage-service.sh logs
           
-          # Wait for service to be healthy
-          sleep 10
-          
-          # Health check
-          max_attempts=30
-          attempt=1
-          while [ $attempt -le $max_attempts ]; do
-            if curl -f -s http://localhost:8080/health > /dev/null 2>&1; then
-              echo "✅ Service is healthy"
-              break
-            fi
-            echo "⏳ Waiting for service to be healthy (attempt $attempt/$max_attempts)..."
-            sleep 2
-            ((attempt++))
-          done
-          
-          if [ $attempt -gt $max_attempts ]; then
-            echo "❌ Service failed to become healthy"
-            docker-compose -f docker-compose.build.yml logs --tail=50
-            exit 1
-          fi
-          
-          # Clean up old Docker images
-          docker image prune -f
-          
-          echo "🎉 Deployment successful!"
-          ENDSSH
+          Health Check URL: http://your-server:8080/health
+          EOF
       
-      - name: Verify deployment
-        run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SSH_HOST }}:8080/health)
-          if [ "$response" = "200" ]; then
-            echo "✅ Deployment verified - service is responding"
-          else
-            echo "❌ Deployment verification failed - HTTP status: $response"
-            exit 1
-          fi
+      - name: Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./deploy-package/
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}
+          port: ${{ secrets.FTP_PORT }}
+          protocol: ${{ secrets.FTP_PROTOCOL }}
+          security: ${{ secrets.FTP_SECURITY }}
+          dangerous-clean-slate: false
       
-      - name: Clean up SSH key
-        if: always()
+      - name: Create post-deployment notification
         run: |
-          rm -f ~/.ssh/id_rsa
+          echo "✅ Files deployed successfully via FTP!"
+          echo "📁 Remote directory: ${{ secrets.FTP_REMOTE_DIR }}"
+          echo "🔧 Next steps:"
+          echo "   1. SSH into your server"
+          echo "   2. Navigate to: ${{ secrets.FTP_REMOTE_DIR }}"
+          echo "   3. Run: ./deploy.sh production"
+          echo "   4. Check status: ./manage-service.sh status"
+          echo "   5. Test: curl http://your-server:8080/health"
 
   notify:
     name: Send Notification
@@ -178,11 +138,14 @@ jobs:
       - name: Send success notification
         if: ${{ needs.deploy.result == 'success' }}
         run: |
-          echo "✅ Deployment successful to production server"
-          # Add your notification service here (Slack, Discord, email, etc.)
+          echo "✅ FTP deployment successful!"
+          echo "📋 Manual steps required:"
+          echo "   • SSH into server"
+          echo "   • Run deployment script"
+          echo "   • Verify service health"
       
       - name: Send failure notification
         if: ${{ needs.deploy.result == 'failure' }}
         run: |
-          echo "❌ Deployment failed to production server"
-          # Add your notification service here (Slack, Discord, email, etc.)
+          echo "❌ FTP deployment failed"
+          echo "Check the workflow logs for details"
