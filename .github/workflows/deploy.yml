@@ -1,4 +1,4 @@
-name: Deploy via FTP
+name: Build and Prepare Deployment
 
 on:
   push:
@@ -10,13 +10,9 @@ on:
       - '.gitignore'
       - 'docs/**'
 
-env:
-  DOCKER_IMAGE: hugo-contact
-  CONTAINER_NAME: hugo-contact-prod
-
 jobs:
-  test:
-    name: Test Application
+  build-and-prepare:
+    name: Build and Create Deployment Package
     runs-on: ubuntu-latest
     
     steps:
@@ -44,30 +40,26 @@ jobs:
       
       - name: Build application
         run: go build -v ./...
-
-  deploy:
-    name: Deploy to Server via FTP
-    runs-on: ubuntu-latest
-    needs: test
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
       
       - name: Create deployment package
         run: |
-          mkdir -p deploy-package
+          echo "🚀 Creating deployment package..."
+          mkdir -p hugo-contact-deployment
           
           # Copy essential files
-          cp main.go Dockerfile go.mod go.sum docker-compose.build.yml deploy-package/
-          cp manage-service.sh deploy-package/
+          cp main.go hugo-contact-deployment/
+          cp Dockerfile hugo-contact-deployment/
+          cp go.mod go.sum hugo-contact-deployment/
+          cp docker-compose.build.yml hugo-contact-deployment/
+          cp manage-service.sh hugo-contact-deployment/
+          cp scripts/deploy.sh hugo-contact-deployment/
           
-          # Copy deployment script
-          cp scripts/deploy.sh deploy-package/
-          chmod +x deploy-package/manage-service.sh deploy-package/deploy.sh
+          # Make scripts executable
+          chmod +x hugo-contact-deployment/manage-service.sh
+          chmod +x hugo-contact-deployment/deploy.sh
           
           # Create .env file with production settings
-          cat > deploy-package/.env << 'EOF'
+          cat > hugo-contact-deployment/.env << 'EOF'
           # SMTP Configuration
           SMTP_HOST=mail23.hi7.de
           SMTP_PORT=587
@@ -87,65 +79,147 @@ jobs:
           EOF
           
           # Create deployment instructions
-          cat > deploy-package/DEPLOY-INSTRUCTIONS.txt << 'EOF'
-          Hugo Contact Form - FTP Deployment Instructions
+          cat > hugo-contact-deployment/DEPLOYMENT-INSTRUCTIONS.md << 'EOF'
+          # Hugo Contact Form - Manual Deployment Instructions
           
-          1. All files have been uploaded to your server
-          2. SSH into your server and navigate to the deployment directory
-          3. Run the deployment script:
-             ./deploy.sh production
+          ## 📦 Files Ready for Deployment
           
-          4. Check service status:
-             ./manage-service.sh status
+          All files have been prepared and tested. Upload these files to your server:
           
-          5. View logs if needed:
-             ./manage-service.sh logs
+          - `main.go` - Application source code
+          - `Dockerfile` - Docker container configuration
+          - `go.mod`, `go.sum` - Go dependencies
+          - `docker-compose.build.yml` - Docker Compose configuration
+          - `manage-service.sh` - Service management script
+          - `deploy.sh` - Automated deployment script
+          - `.env` - Production environment configuration (with secrets)
           
-          Health Check URL: http://your-server:8080/health
+          ## 🚀 Deployment Steps
+          
+          ### 1. Upload Files to Server
+          
+          Upload all files to your server directory (e.g., `~/hugo-contact/`):
+          
+          ```bash
+          # Via SCP (if you have SSH access)
+          scp -r hugo-contact-deployment/* user@yourserver.com:~/hugo-contact/
+          
+          # Via FTP client
+          # Upload all files to your desired directory
+          ```
+          
+          ### 2. Execute Deployment
+          
+          SSH into your server and run the deployment:
+          
+          ```bash
+          # SSH into your server
+          ssh user@yourserver.com
+          
+          # Navigate to deployment directory
+          cd ~/hugo-contact
+          
+          # Make scripts executable (if needed)
+          chmod +x deploy.sh manage-service.sh
+          
+          # Run deployment
+          ./deploy.sh production
+          
+          # Check service status
+          ./manage-service.sh status
+          ```
+          
+          ### 3. Verify Deployment
+          
+          Test your endpoints:
+          
+          ```bash
+          # Health check
+          curl http://localhost:8080/health
+          
+          # Token endpoint
+          curl http://localhost:8080/form-token.js
+          
+          # External access (replace with your domain)
+          curl http://contact.connexxo.com:8080/health
+          ```
+          
+          ## 🛠️ Service Management
+          
+          ```bash
+          # Start service
+          ./manage-service.sh start
+          
+          # Stop service
+          ./manage-service.sh stop
+          
+          # Restart service
+          ./manage-service.sh restart
+          
+          # Update service (rebuild and restart)
+          ./manage-service.sh update
+          
+          # View logs
+          ./manage-service.sh logs
+          
+          # Follow logs in real-time
+          ./manage-service.sh follow
+          ```
+          
+          ## 🎯 Success Indicators
+          
+          - Container is running: `docker ps | grep hugo-contact`
+          - Health endpoint returns: `{"status":"ok","service":"hugo-contact"}`
+          - Token endpoint returns JavaScript code
+          - No errors in logs: `./manage-service.sh logs`
+          
+          ## 📞 Support
+          
+          If you encounter issues:
+          1. Check logs: `./manage-service.sh logs`
+          2. Verify Docker is installed: `docker --version`
+          3. Check port 8080 is free: `netstat -tuln | grep 8080`
+          4. Ensure .env file has correct values
+          
+          ---
+          
+          **✅ Ready for Production Deployment!**
           EOF
-      
-      - name: Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+          
+          # Create archive for easy download
+          tar -czf hugo-contact-deployment.tar.gz hugo-contact-deployment/
+          
+          echo "✅ Deployment package created successfully!"
+          echo "📁 Directory: hugo-contact-deployment/"
+          echo "📦 Archive: hugo-contact-deployment.tar.gz"
+          
+      - name: Upload deployment package
+        uses: actions/upload-artifact@v3
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./deploy-package/
-          server-dir: ${{ secrets.FTP_REMOTE_DIR }}
-          port: ${{ secrets.FTP_PORT }}
-          protocol: ${{ secrets.FTP_PROTOCOL }}
-          security: ${{ secrets.FTP_SECURITY }}
-          dangerous-clean-slate: false
+          name: hugo-contact-deployment
+          path: |
+            hugo-contact-deployment/
+            hugo-contact-deployment.tar.gz
+          retention-days: 30
       
-      - name: Create post-deployment notification
+      - name: Deployment Summary
         run: |
-          echo "✅ Files deployed successfully via FTP!"
-          echo "📁 Remote directory: ${{ secrets.FTP_REMOTE_DIR }}"
-          echo "🔧 Next steps:"
-          echo "   1. SSH into your server"
-          echo "   2. Navigate to: ${{ secrets.FTP_REMOTE_DIR }}"
-          echo "   3. Run: ./deploy.sh production"
-          echo "   4. Check status: ./manage-service.sh status"
-          echo "   5. Test: curl http://your-server:8080/health"
-
-  notify:
-    name: Send Notification
-    runs-on: ubuntu-latest
-    needs: deploy
-    if: always()
-    
-    steps:
-      - name: Send success notification
-        if: ${{ needs.deploy.result == 'success' }}
-        run: |
-          echo "✅ FTP deployment successful!"
-          echo "📋 Manual steps required:"
-          echo "   • SSH into server"
-          echo "   • Run deployment script"
-          echo "   • Verify service health"
-      
-      - name: Send failure notification
-        if: ${{ needs.deploy.result == 'failure' }}
-        run: |
-          echo "❌ FTP deployment failed"
-          echo "Check the workflow logs for details"
+          echo "## 🎉 Deployment Package Ready!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 What's Included:" >> $GITHUB_STEP_SUMMARY
+          echo "- Tested and built application" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker configuration files" >> $GITHUB_STEP_SUMMARY
+          echo "- Production .env file with secrets" >> $GITHUB_STEP_SUMMARY
+          echo "- Deployment and management scripts" >> $GITHUB_STEP_SUMMARY
+          echo "- Complete deployment instructions" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the deployment package from the Artifacts section below" >> $GITHUB_STEP_SUMMARY
+          echo "2. Extract and upload files to your server" >> $GITHUB_STEP_SUMMARY
+          echo "3. SSH into your server and run: \`./deploy.sh production\`" >> $GITHUB_STEP_SUMMARY
+          echo "4. Verify deployment: \`curl http://localhost:8080/health\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Files Ready:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -la hugo-contact-deployment/ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
