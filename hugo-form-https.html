@@ -1,0 +1,115 @@
+<!-- Contact Form - HTTPS Version -->
+<div class="contact-form-wrapper mt-8">
+    <div class="max-w-4xl mx-auto">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl md:text-4xl font-light text-[#585878] mb-4">
+                Need More Information?
+            </h2>
+        </div>
+
+        <!-- Updated form with correct HTTPS URLs -->
+        <form class="contact-form" action="https://contact.connexxo.com/f/contact" method="POST" novalidate 
+              aria-describedby="form-instructions">
+            
+            <div id="form-instructions" class="sr-only">
+                Contact form. All fields marked with asterisk are required.
+            </div>
+
+            <!-- ARIA live region for form feedback -->
+            <div id="form-feedback" aria-live="polite" aria-atomic="true" class="sr-only"></div>
+
+            <!-- REQUIRED: Anti-spam honeypot field (must be hidden) -->
+            <input type="text" name="_gotcha" style="display:none !important; position:absolute !important; left:-9999px !important;"
+                   tabindex="-1" autocomplete="off" aria-hidden="true">
+
+            <!-- OPTIONAL: Redirect after successful submission -->
+            <input type="hidden" name="_next" value="https://connexxo.com/thank-you">
+
+            <fieldset>
+                <legend class="sr-only">Personal Information</legend>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="name" class="form-label">Name <span class="required" aria-label="required">*</span></label>
+                        <input type="text" id="name" name="name" class="form-input" 
+                               placeholder="Your full name" 
+                               required 
+                               aria-required="true" 
+                               aria-describedby="name-error" 
+                               aria-invalid="false"
+                               autocomplete="name">
+                        <div id="name-error" class="error-message" aria-live="polite"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="email" class="form-label">Email <span class="required" aria-label="required">*</span></label>
+                        <input type="email" id="email" name="email" class="form-input" 
+                               placeholder="your.email@example.com" 
+                               required 
+                               aria-required="true" 
+                               aria-describedby="email-error" 
+                               aria-invalid="false"
+                               autocomplete="email">
+                        <div id="email-error" class="error-message" aria-live="polite"></div>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend class="sr-only">Subject</legend>
+                <div class="form-group">
+                    <label for="subject" class="form-label">Subject <span class="required" aria-label="required">*</span></label>
+                    <input type="text" id="subject" name="subject" class="form-input" 
+                           placeholder="Brief subject line" 
+                           required 
+                           aria-required="true" 
+                           aria-describedby="subject-error" 
+                           aria-invalid="false">
+                    <div id="subject-error" class="error-message" aria-live="polite"></div>
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend class="sr-only">Message Details</legend>
+                <div class="form-group">
+                    <label for="message" class="form-label">Message <span class="required" aria-label="required">*</span></label>
+                    <textarea id="message" name="message" class="form-textarea" rows="6" 
+                              placeholder="Your message..." 
+                              required 
+                              aria-required="true" 
+                              aria-describedby="message-error message-help" 
+                              aria-invalid="false"></textarea>
+                    <div id="message-help" class="form-help">
+                        Minimum 10 characters required
+                    </div>
+                    <div id="message-error" class="error-message" aria-live="polite"></div>
+                </div>
+            </fieldset>
+
+            <div class="text-center">
+                <button type="submit" class="form-submit-btn" aria-describedby="submit-help">
+                    <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" 
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22,2 15,22 11,13 2,9 22,2"></polygon>
+                    </svg>
+                    <span id="submit-text">Send Message</span>
+                    <span id="submit-loading" class="sr-only" aria-live="polite"></span>
+                </button>
+                <div id="submit-help" class="form-help text-center mt-2">
+                    Press Enter or click to submit the form
+                </div>
+            </div>
+        </form>
+
+        <!-- Load the anti-spam token script with HTTPS -->
+        <script>
+            const s = document.createElement('script');
+            s.src = 'https://contact.connexxo.com/form-token.js';
+            s.defer = true;
+            s.onerror = function() {
+                console.error('Failed to load anti-spam token script');
+                // Fallback: still allow form submission without token
+            };
+            document.body.appendChild(s);
+        </script>
+    </div>
+</div>
