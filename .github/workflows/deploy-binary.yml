@@ -263,7 +263,7 @@ jobs:
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
           local-dir: ./deployment/
-          server-dir: ./htdocs/hugo-contact/
+          server-dir: ./hugo-contact/
           protocol: ftps
           security: strict
           exclude: |
