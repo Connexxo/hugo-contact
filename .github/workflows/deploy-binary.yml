@@ -55,13 +55,14 @@ jobs:
           cp hugo-contact-https deployment/
           chmod +x deployment/hugo-contact-https
           
+          # Copy reverse proxy configuration
+          cp .htaccess-proxy deployment/.htaccess-proxy-example
+          
           # Create production environment file
           cat > deployment/.env.production << 'EOF'
-          # Server Configuration
-          USE_HTTPS=true
-          PORT=443
-          SSL_CERT_PATH=${{ secrets.SSL_CERT_PATH }}
-          SSL_KEY_PATH=${{ secrets.SSL_KEY_PATH }}
+          # Server Configuration (HTTP mode behind reverse proxy)
+          USE_HTTPS=false
+          PORT=8080
           
           # SMTP Configuration
           SMTP_HOST=${{ secrets.SMTP_HOST }}
@@ -82,9 +83,9 @@ jobs:
           cat > deployment/restart-contact-server.sh << 'EOF'
           #!/bin/bash
           
-          # Hugo Contact Form HTTPS Restart Script
+          # Hugo Contact Form HTTP Restart Script (behind reverse proxy)
           
-          echo "🔄 Restarting Hugo Contact Form HTTPS server on port 443..."
+          echo "🔄 Restarting Hugo Contact Form HTTP server on port 8080..."
           
           # Load environment variables
           if [ -f .env.production ]; then
@@ -103,8 +104,8 @@ jobs:
           # Make sure binary is executable
           chmod +x hugo-contact-https
           
-          # Start new process in background with nohup
-          echo "🚀 Starting HTTPS server on port 443..."
+          # Start new process in background with nohup (no sudo required)
+          echo "🚀 Starting HTTP server on port 8080..."
           nohup ./hugo-contact-https > hugo-contact.log 2>&1 &
           
           # Wait a moment for server to start
@@ -117,7 +118,7 @@ jobs:
               
               # Test the health endpoint
               echo "🔍 Testing health endpoint..."
-              if curl -s -k https://localhost/health > /dev/null 2>&1; then
+              if curl -s http://localhost:8080/health > /dev/null 2>&1; then
                   echo "✅ Health check passed!"
               else
                   echo "⚠️  Health check failed - server may still be starting"
@@ -129,9 +130,14 @@ jobs:
           fi
           
           echo ""
-          echo "🎉 Hugo Contact Form HTTPS server is running on port 443!"
-          echo "📍 Direct HTTPS support enabled"
-          echo "📍 Public HTTPS Endpoints:"
+          echo "🎉 Hugo Contact Form HTTP server is running on port 8080!"
+          echo "📍 Behind reverse proxy for HTTPS access"
+          echo "📍 Local HTTP Endpoints:"
+          echo "   http://localhost:8080/health"
+          echo "   http://localhost:8080/f/contact" 
+          echo "   http://localhost:8080/form-token.js"
+          echo ""
+          echo "📍 Public HTTPS Endpoints (via reverse proxy):"
           echo "   https://contact.connexxo.com/health"
           echo "   https://contact.connexxo.com/f/contact"
           echo "   https://contact.connexxo.com/form-token.js"
@@ -162,18 +168,18 @@ jobs:
           
           # Test health endpoint
           echo "🏥 Health Check:"
-          if curl -s -k -f https://localhost/health > /dev/null 2>&1; then
-              health_data=$(curl -s -k https://localhost/health)
+          if curl -s -f http://localhost:8080/health > /dev/null 2>&1; then
+              health_data=$(curl -s http://localhost:8080/health)
               echo "✅ HEALTHY - $health_data"
           else
-              echo "❌ FAILED - Service not responding on port 443"
+              echo "❌ FAILED - Service not responding on port 8080"
           fi
           
           echo ""
           
           # Test token endpoint
           echo "🎫 Token Endpoint:"
-          if curl -s -k -f https://localhost/form-token.js > /dev/null 2>&1; then
+          if curl -s -f http://localhost:8080/form-token.js > /dev/null 2>&1; then
               echo "✅ WORKING - JavaScript token endpoint active"
           else
               echo "❌ FAILED - Token endpoint not responding"
@@ -181,12 +187,12 @@ jobs:
           
           echo ""
           
-          # Test external access (through HTTPS proxy)
-          echo "🌐 External Access (via HTTPS):"
+          # Test external access (through reverse proxy)
+          echo "🌐 External Access (via reverse proxy):"
           if curl -s -f https://contact.connexxo.com/health > /dev/null 2>&1; then
-              echo "✅ ACCESSIBLE - External HTTPS access working"
+              echo "✅ ACCESSIBLE - External HTTPS access working via reverse proxy"
           else
-              echo "⚠️  NOT ACCESSIBLE - Check HTTPS proxy configuration"
+              echo "⚠️  NOT ACCESSIBLE - Check reverse proxy configuration (.htaccess)"
           fi
           
           echo ""
