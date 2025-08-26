@@ -256,7 +256,7 @@ jobs:
           echo "✅ Deployment package created!"
           ls -la deployment/
       
-      - name: Deploy via FTP
+      - name: Deploy via FTPS
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_HOST }}
@@ -264,6 +264,8 @@ jobs:
           password: ${{ secrets.FTP_PASS }}
           local-dir: ./deployment/
           server-dir: ./htdocs/hugo-contact/
+          protocol: ftps
+          security: strict
           exclude: |
             **/.git*
             **/.DS_Store

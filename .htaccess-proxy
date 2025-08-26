@@ -1,21 +1,34 @@
-# Apache .htaccess for proxying contact form requests
-# Place this in your web root directory
+# Apache Reverse Proxy Configuration for Hugo Contact Form
+# Place this file as .htaccess in your web server's document root
+# (where contact.connexxo.com points to)
 
-# Enable rewrite engine
 RewriteEngine On
 
-# Proxy contact form submissions to Hugo Contact server
+# Proxy contact form POST endpoint
 RewriteRule ^f/contact$ http://127.0.0.1:8080/f/contact [P,L]
 
-# Proxy form token script
+# Proxy the anti-spam token JavaScript
 RewriteRule ^form-token\.js$ http://127.0.0.1:8080/form-token.js [P,L]
 
-# Add CORS headers for contact form
-Header always set Access-Control-Allow-Origin "https://connexxo.com"
-Header always set Access-Control-Allow-Methods "POST, OPTIONS"
-Header always set Access-Control-Allow-Headers "Content-Type"
-Header always set Access-Control-Max-Age "86400"
+# Proxy health endpoint (optional, for monitoring)
+RewriteRule ^health$ http://127.0.0.1:8080/health [P,L]
 
-# Handle preflight OPTIONS requests
-RewriteCond %{REQUEST_METHOD} OPTIONS
+# Set CORS headers for the contact form
+<IfModule mod_headers.c>
+    # Only set CORS headers for form endpoints
+    <LocationMatch "^/(f/|form-token\.js)">
+        Header always set Access-Control-Allow-Origin "https://connexxo.com"
+        Header always set Access-Control-Allow-Methods "POST, OPTIONS"
+        Header always set Access-Control-Allow-Headers "Content-Type"
+        Header always set Access-Control-Max-Age "86400"
+    </LocationMatch>
+    
+    # No-cache for token script
+    <LocationMatch "form-token\.js">
+        Header always set Cache-Control "no-store, no-cache, must-revalidate"
+    </LocationMatch>
+</IfModule>
+
+# Handle OPTIONS requests for CORS preflight
+RewriteCond %{REQUEST_METHOD} ^OPTIONS$
 RewriteRule ^f/contact$ - [R=204,L]

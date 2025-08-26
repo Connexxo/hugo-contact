@@ -123,6 +123,13 @@ func contactHandler(w http.ResponseWriter, r *http.Request) {
 	email := r.FormValue("email")
 	message := r.FormValue("message")
 	subject := r.FormValue("subject")
+	
+	// Debug logging to see what we're receiving
+	logger.Info("Form submission received", 
+		slog.String("name", name), 
+		slog.String("email", email), 
+		slog.String("subject", subject),
+		slog.String("ip", ip))
 
 	if name == "" || email == "" || message == "" {
 		http.Error(w, "Missing required fields", http.StatusBadRequest)
