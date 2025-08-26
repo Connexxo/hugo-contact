@@ -264,6 +264,7 @@ func main() {
 		}
 
 		logger.Info("Starting HTTPS form handler", slog.String("port", port), slog.String("cert", certFile))
+		// Ready for production HTTPS deployment
 		err := server.ListenAndServeTLS(certFile, keyFile)
 		if err != nil {
 			logger.Error("HTTPS server failed", slog.String("error", err.Error()))
