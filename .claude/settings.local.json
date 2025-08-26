@@ -14,7 +14,9 @@
       "Bash(go mod:*)",
       "Bash(cat:*)",
       "Bash(cp:*)",
-      "Bash(git remote remove:*)"
+      "Bash(git remote remove:*)",
+      "Bash(git push:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }
