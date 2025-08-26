@@ -1,0 +1,288 @@
+name: Build and Deploy Binary
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - 'docs/**'
+
+jobs:
+  build-and-deploy:
+    name: Build Binary and Deploy via FTP
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      
+      - name: Install dependencies
+        run: go mod download
+      
+      - name: Run tests
+        run: go test ./... -v
+      
+      - name: Cross-compile for Linux AMD64
+        run: |
+          echo "🔨 Building Linux AMD64 binary..."
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -o hugo-contact-https main-https.go
+          
+          echo "📦 Binary built successfully!"
+          ls -lah hugo-contact-https
+          file hugo-contact-https
+      
+      - name: Create deployment package
+        run: |
+          echo "📦 Creating deployment package..."
+          mkdir -p deployment
+          
+          # Copy binary
+          cp hugo-contact-https deployment/
+          chmod +x deployment/hugo-contact-https
+          
+          # Create production environment file
+          cat > deployment/.env.production << 'EOF'
+          # Server Configuration
+          USE_HTTPS=true
+          PORT=443
+          SSL_CERT_PATH=${{ secrets.SSL_CERT_PATH }}
+          SSL_KEY_PATH=${{ secrets.SSL_KEY_PATH }}
+          
+          # SMTP Configuration
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME=${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          SENDER_EMAIL=${{ secrets.SENDER_EMAIL }}
+          RECIPIENT_EMAIL=${{ secrets.RECIPIENT_EMAIL }}
+          
+          # CORS Configuration
+          CORS_ALLOW_ORIGINS=https://connexxo.com,https://www.connexxo.com
+          
+          # Security Token
+          TOKEN_SECRET=${{ secrets.TOKEN_SECRET }}
+          EOF
+          
+          # Create restart script
+          cat > deployment/restart-contact-server.sh << 'EOF'
+          #!/bin/bash
+          
+          # Hugo Contact Form HTTPS Restart Script
+          
+          echo "🔄 Restarting Hugo Contact Form HTTPS server on port 443..."
+          
+          # Load environment variables
+          if [ -f .env.production ]; then
+              export $(cat .env.production | grep -v '^#' | xargs)
+              echo "✅ Environment variables loaded"
+          else
+              echo "❌ .env.production file not found!"
+              exit 1
+          fi
+          
+          # Stop existing process
+          echo "🛑 Stopping existing process..."
+          pkill -f hugo-contact-https || true
+          sleep 2
+          
+          # Make sure binary is executable
+          chmod +x hugo-contact-https
+          
+          # Start new process in background with nohup
+          echo "🚀 Starting HTTPS server on port 443..."
+          nohup ./hugo-contact-https > hugo-contact.log 2>&1 &
+          
+          # Wait a moment for server to start
+          sleep 3
+          
+          # Check if it's running
+          if pgrep -f hugo-contact-https > /dev/null; then
+              echo "✅ Server started successfully!"
+              echo "📝 Logs: tail -f hugo-contact.log"
+              
+              # Test the health endpoint
+              echo "🔍 Testing health endpoint..."
+              if curl -s -k https://localhost/health > /dev/null 2>&1; then
+                  echo "✅ Health check passed!"
+              else
+                  echo "⚠️  Health check failed - server may still be starting"
+              fi
+          else
+              echo "❌ Failed to start server!"
+              echo "Check logs: tail hugo-contact.log"
+              exit 1
+          fi
+          
+          echo ""
+          echo "🎉 Hugo Contact Form HTTPS server is running on port 443!"
+          echo "📍 Direct HTTPS support enabled"
+          echo "📍 Public HTTPS Endpoints:"
+          echo "   https://contact.connexxo.com/health"
+          echo "   https://contact.connexxo.com/f/contact"
+          echo "   https://contact.connexxo.com/form-token.js"
+          EOF
+          
+          chmod +x deployment/restart-contact-server.sh
+          
+          # Create status check script
+          cat > deployment/check-status.sh << 'EOF'
+          #!/bin/bash
+          
+          # Status check for HTTPS server
+          
+          echo "🔍 Hugo Contact Form Status Check"
+          echo "========================================"
+          echo ""
+          
+          # Check if process is running
+          echo "📊 Process Status:"
+          if pgrep -f hugo-contact-https > /dev/null; then
+              echo "✅ RUNNING - Process active"
+              echo "   PID: $(pgrep -f hugo-contact-https)"
+          else
+              echo "❌ STOPPED - Process not running"
+          fi
+          
+          echo ""
+          
+          # Test health endpoint
+          echo "🏥 Health Check:"
+          if curl -s -k -f https://localhost/health > /dev/null 2>&1; then
+              health_data=$(curl -s -k https://localhost/health)
+              echo "✅ HEALTHY - $health_data"
+          else
+              echo "❌ FAILED - Service not responding on port 443"
+          fi
+          
+          echo ""
+          
+          # Test token endpoint
+          echo "🎫 Token Endpoint:"
+          if curl -s -k -f https://localhost/form-token.js > /dev/null 2>&1; then
+              echo "✅ WORKING - JavaScript token endpoint active"
+          else
+              echo "❌ FAILED - Token endpoint not responding"
+          fi
+          
+          echo ""
+          
+          # Test external access (through HTTPS proxy)
+          echo "🌐 External Access (via HTTPS):"
+          if curl -s -f https://contact.connexxo.com/health > /dev/null 2>&1; then
+              echo "✅ ACCESSIBLE - External HTTPS access working"
+          else
+              echo "⚠️  NOT ACCESSIBLE - Check HTTPS proxy configuration"
+          fi
+          
+          echo ""
+          echo "⏰ Checked at: $(date)"
+          echo ""
+          echo "💡 To restart: ./restart-contact-server.sh"
+          echo "📝 To view logs: tail -f hugo-contact.log"
+          EOF
+          
+          chmod +x deployment/check-status.sh
+          
+          # Create README
+          cat > deployment/README-DEPLOYMENT.md << 'EOF'
+          # Hugo Contact Form Deployment (HTTP + HTTPS Proxy)
+          
+          ## Files Included
+          
+          - `hugo-contact` - The compiled Go binary (Linux AMD64)
+          - `.env.production` - Environment configuration with secrets
+          - `restart-contact-server.sh` - Script to restart the server
+          - `check-status.sh` - Script to check server status
+          
+          ## Deployment Steps
+          
+          1. **Upload all files to your server** (to /htdocs or your preferred directory)
+          
+          2. **SSH into your server**:
+             ```bash
+             ssh your-server
+             cd /htdocs
+             ```
+          
+          3. **Make scripts executable**:
+             ```bash
+             chmod +x restart-contact-server.sh check-status.sh hugo-contact-https
+             ```
+          
+          4. **Start the server**:
+             ```bash
+             sudo ./restart-contact-server.sh
+             ```
+          
+          5. **Verify it's working**:
+             ```bash
+             ./check-https-status.sh
+             ```
+          
+          ## Management Commands
+          
+          - **Start/Restart**: `sudo ./restart-contact-server.sh`
+          - **Check Status**: `./check-status.sh`
+          - **View Logs**: `tail -f hugo-contact.log`
+          - **Stop Server**: `sudo pkill -f hugo-contact-https`
+          
+          ## Troubleshooting
+          
+          - **Port 443 permission denied**: Make sure to use `sudo`
+          - **SSL certificate errors**: Check paths in .env.production
+          - **Server not accessible**: Check firewall allows port 443
+          
+          ## Test Endpoints
+          
+          - Health: `curl https://contact.connexxo.com/health`
+          - Token: `curl https://contact.connexxo.com/form-token.js`
+          EOF
+          
+          echo "✅ Deployment package created!"
+          ls -la deployment/
+      
+      - name: Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASS }}
+          local-dir: ./deployment/
+          server-dir: ./htdocs/hugo-contact/
+          exclude: |
+            **/.git*
+            **/.DS_Store
+      
+      - name: Deployment Summary
+        run: |
+          echo "## 🎉 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Deployed Files:" >> $GITHUB_STEP_SUMMARY
+          echo "- Binary: hugo-contact-https (Linux AMD64)" >> $GITHUB_STEP_SUMMARY
+          echo "- Config: .env.production" >> $GITHUB_STEP_SUMMARY
+          echo "- Scripts: restart-contact-server.sh, check-status.sh" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. SSH into your server" >> $GITHUB_STEP_SUMMARY
+          echo "2. Navigate to: /htdocs/hugo-contact" >> $GITHUB_STEP_SUMMARY
+          echo "3. Run: \`sudo ./restart-contact-server.sh\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Test URLs:" >> $GITHUB_STEP_SUMMARY
+          echo "- https://contact.connexxo.com/health" >> $GITHUB_STEP_SUMMARY
+          echo "- https://contact.connexxo.com/form-token.js" >> $GITHUB_STEP_SUMMARY
