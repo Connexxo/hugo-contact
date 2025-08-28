@@ -17,6 +17,7 @@ import (
 
 var logger *slog.Logger
 var tokenSecret []byte
+var spamLogger *SpamLogger
 
 func generateToken(ts int64) string {
 	h := hmac.New(sha256.New, tokenSecret)
@@ -107,6 +108,17 @@ func contactHandler(w http.ResponseWriter, r *http.Request) {
 	token := r.FormValue("_ts_token")
 	if !validateToken(token) {
 		logger.Warn("Invalid or missing timestamp token", slog.String("ip", ip))
+		
+		// Log spam attempt
+		if os.Getenv("SPAM_LOG_ENABLED") == "true" && spamLogger != nil {
+			email := r.FormValue("email")
+			subject := r.FormValue("subject")
+			message := r.FormValue("message")
+			if err := spamLogger.LogSpam(email, subject, message, "Invalid token", ip); err != nil {
+				logger.Error("Failed to log spam", slog.String("error", err.Error()))
+			}
+		}
+		
 		http.Error(w, "Invalid token", http.StatusBadRequest)
 		return
 	}
@@ -114,6 +126,17 @@ func contactHandler(w http.ResponseWriter, r *http.Request) {
 	// honeypot fields
 	if r.FormValue("_gotcha") != "" || r.FormValue("nickname") != "" {
 		logger.Info("Honeypot field triggered — likely a bot", slog.String("ip", ip))
+		
+		// Log spam attempt
+		if os.Getenv("SPAM_LOG_ENABLED") == "true" && spamLogger != nil {
+			email := r.FormValue("email")
+			subject := r.FormValue("subject")
+			message := r.FormValue("message")
+			if err := spamLogger.LogSpam(email, subject, message, "Honeypot triggered", ip); err != nil {
+				logger.Error("Failed to log spam", slog.String("error", err.Error()))
+			}
+		}
+		
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -209,6 +232,12 @@ func checkAndSetCORSHeaders(w http.ResponseWriter, r *http.Request) bool {
 
 func main() {
 	logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	
+	// Initialize spam logger if enabled
+	if os.Getenv("SPAM_LOG_ENABLED") == "true" {
+		spamLogger = NewSpamLogger()
+		logger.Info("Spam logging enabled")
+	}
 
 	// if there is an environmental variable for the token secret, use that, useful for clustering
 	envSecret := os.Getenv("TOKEN_SECRET")

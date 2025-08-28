@@ -53,9 +53,9 @@ build_image() {
     cd "$DEPLOY_DIR"
     
     # Check if required files exist
-    if [ ! -f "Dockerfile" ] || [ ! -f "main-https.go" ] || [ ! -f "go.mod" ]; then
+    if [ ! -f "Dockerfile" ] || [ ! -f "main-https.go" ] || [ ! -f "spam_logger.go" ] || [ ! -f "go.mod" ]; then
         print_error "Required build files not found in $DEPLOY_DIR"
-        print_warning "Please upload: Dockerfile, main-https.go, go.mod, go.sum"
+        print_warning "Please upload: Dockerfile, main-https.go, spam_logger.go, go.mod, go.sum"
         exit 1
     fi
     
@@ -97,16 +97,34 @@ run_container() {
     TOKEN_SECRET="${TOKEN_SECRET:-$(openssl rand -base64 32)}"
     CORS_ORIGINS="${CORS_ORIGINS:-https://connexxo.com,http://connexxo.com,https://contact.connexxo.com,http://contact.connexxo.com}"
     
+    # Spam logging configuration
+    SPAM_LOG_ENABLED="${SPAM_LOG_ENABLED:-false}"
+    SPAM_REPORT_ENABLED="${SPAM_REPORT_ENABLED:-false}"
+    SPAM_REPORT_RECIPIENT="${SPAM_REPORT_RECIPIENT:-$RECIPIENT_EMAIL}"
+    
+    # Create log directory on host if spam logging is enabled
+    if [ "$SPAM_LOG_ENABLED" = "true" ]; then
+        mkdir -p "/var/log/hugo-contact"
+        print_status "Created spam log directory: /var/log/hugo-contact"
+    fi
+    
     if [ -z "$SMTP_PASSWORD" ]; then
         print_error "SMTP_PASSWORD environment variable is required!"
         print_warning "Set it with: export SMTP_PASSWORD='your-password'"
         exit 1
     fi
     
+    # Build volume mount arguments for spam logging
+    VOLUME_ARGS=""
+    if [ "$SPAM_LOG_ENABLED" = "true" ]; then
+        VOLUME_ARGS="-v /var/log/hugo-contact:/var/log/hugo-contact"
+    fi
+    
     docker run -d \
         --name "$CONTAINER_NAME" \
         --restart unless-stopped \
         -p 8080:8080 \
+        $VOLUME_ARGS \
         -e PORT=8080 \
         -e "CORS_ALLOW_ORIGINS=$CORS_ORIGINS" \
         -e "SMTP_HOST=$SMTP_HOST" \
@@ -116,6 +134,9 @@ run_container() {
         -e "SENDER_EMAIL=$SENDER_EMAIL" \
         -e "RECIPIENT_EMAIL=$RECIPIENT_EMAIL" \
         -e "TOKEN_SECRET=$TOKEN_SECRET" \
+        -e "SPAM_LOG_ENABLED=$SPAM_LOG_ENABLED" \
+        -e "SPAM_REPORT_ENABLED=$SPAM_REPORT_ENABLED" \
+        -e "SPAM_REPORT_RECIPIENT=$SPAM_REPORT_RECIPIENT" \
         "$IMAGE_NAME"
     
     if [ $? -eq 0 ]; then

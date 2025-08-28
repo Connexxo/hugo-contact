@@ -1,0 +1,81 @@
+HUGO CONTACT FORM - DEPLOYMENT INSTRUCTIONS
+===========================================
+
+1. UPLOAD FILES VIA FTP
+   Upload all files from this directory to:
+   /home/k000490/www/12/htdocs/
+
+   Files to upload:
+   - Dockerfile
+   - main-https.go
+   - spam_logger.go
+   - go.mod
+   - go.sum
+   - cmd/ (directory with spam report tool)
+   - scripts/ (directory with cron script)
+   - deploy-docker.sh (optional - for automated deployment)
+
+2. CONNECT VIA SSH
+   SSH into your server
+
+3. AUTOMATED DEPLOYMENT (if deploy-docker.sh was uploaded)
+   cd /home/k000490/www/12/htdocs/
+   export SMTP_PASSWORD='your-smtp-password'
+   chmod +x deploy-docker.sh
+   ./deploy-docker.sh
+
+4. MANUAL DEPLOYMENT
+   If not using the script, run these commands:
+
+   # Navigate to deployment directory
+   cd /home/k000490/www/12/htdocs/
+
+   # Build Docker image
+   docker build -t hugo-contact:latest .
+
+   # Stop and remove existing container (if any)
+   docker stop hugo-contact-prod 2>/dev/null || true
+   docker rm hugo-contact-prod 2>/dev/null || true
+
+   # Run new container
+   docker run -d \
+     --name hugo-contact-prod \
+     --restart unless-stopped \
+     -p 8080:8080 \
+     -e PORT=8080 \
+     -e CORS_ALLOW_ORIGINS=https://connexxo.com,http://connexxo.com,https://contact.connexxo.com,http://contact.connexxo.com \
+     -e SMTP_HOST=mail23.hi7.de \
+     -e SMTP_PORT=587 \
+     -e SMTP_USERNAME=k000490-017 \
+     -e SMTP_PASSWORD='your-smtp-password' \
+     -e SENDER_EMAIL=system@connexxo.com \
+     -e RECIPIENT_EMAIL=info@connexxo.com \
+     -e TOKEN_SECRET='your-secret-token' \
+     hugo-contact:latest
+
+   # Create .htaccess for routing
+   cat > .htaccess << 'HTACCESS'
+RewriteEngine On
+RewriteRule ^(.*)$ http://localhost:8080/$1 [P,L]
+HTACCESS
+
+   # Clean up build files
+   rm -f Dockerfile main-https.go go.mod go.sum deploy-docker.sh
+
+5. TEST THE DEPLOYMENT
+   curl http://localhost:8080/health
+   
+   Should return: {"status":"healthy","service":"hugo-contact","timestamp":"..."}
+
+6. VERIFY EXTERNAL ACCESS
+   Visit: http://contact.connexxo.com/health
+
+TROUBLESHOOTING
+===============
+- Check logs: docker logs hugo-contact-prod --tail 50
+- Restart container: docker restart hugo-contact-prod
+- Check status: docker ps | grep hugo-contact-prod
+
+IMPORTANT
+=========
+Remember to set your SMTP_PASSWORD before running the container!

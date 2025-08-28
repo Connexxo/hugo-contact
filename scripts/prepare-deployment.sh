@@ -65,6 +65,7 @@ copy_files() {
     
     # Copy files
     cp "$PROJECT_ROOT/main-https.go" "$DEPLOY_PACKAGE_DIR/"
+    cp "$PROJECT_ROOT/spam_logger.go" "$DEPLOY_PACKAGE_DIR/"
     cp "$PROJECT_ROOT/Dockerfile" "$DEPLOY_PACKAGE_DIR/"
     cp "$PROJECT_ROOT/go.mod" "$DEPLOY_PACKAGE_DIR/"
     
@@ -73,6 +74,17 @@ copy_files() {
         cp "$PROJECT_ROOT/go.sum" "$DEPLOY_PACKAGE_DIR/"
     else
         touch "$DEPLOY_PACKAGE_DIR/go.sum"
+    fi
+    
+    # Copy spam reporting tool and scripts
+    if [ -d "$PROJECT_ROOT/cmd" ]; then
+        cp -r "$PROJECT_ROOT/cmd" "$DEPLOY_PACKAGE_DIR/"
+    fi
+    
+    if [ -f "$SCRIPT_DIR/send-spam-report.sh" ]; then
+        mkdir -p "$DEPLOY_PACKAGE_DIR/scripts"
+        cp "$SCRIPT_DIR/send-spam-report.sh" "$DEPLOY_PACKAGE_DIR/scripts/"
+        chmod +x "$DEPLOY_PACKAGE_DIR/scripts/send-spam-report.sh"
     fi
     
     # Copy deployment script
@@ -99,8 +111,11 @@ HUGO CONTACT FORM - DEPLOYMENT INSTRUCTIONS
    Files to upload:
    - Dockerfile
    - main-https.go
+   - spam_logger.go
    - go.mod
    - go.sum
+   - cmd/ (directory with spam report tool)
+   - scripts/ (directory with cron script)
    - deploy-docker.sh (optional - for automated deployment)
 
 2. CONNECT VIA SSH

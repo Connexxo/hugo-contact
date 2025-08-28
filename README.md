@@ -13,6 +13,7 @@ A secure, Formspree-compatible contact form backend for Hugo and static websites
 - 🏥 Health check endpoints for monitoring
 - 🍯 Honeypot spam protection
 - 📝 Custom subject field support
+- 📊 Spam logging and daily email reports
 
 ## Quick Start
 
@@ -48,6 +49,12 @@ Configure via environment variables:
 | `TOKEN_SECRET` | No | Secret for anti-spam tokens (auto-generated if not set) |
 | `CORS_ALLOW_ORIGINS` | No | Comma-separated allowed origins (default: "*") |
 | `PORT` | No | Server port (default: 8080) |
+| `SPAM_LOG_ENABLED` | No | Enable spam logging (default: false) |
+| `SPAM_LOG_DIR` | No | Directory for spam logs (default: /var/log/hugo-contact) |
+| `SPAM_LOG_MAX_SIZE_MB` | No | Maximum log file size before rotation (default: 10) |
+| `SPAM_LOG_RETENTION_DAYS` | No | Days to keep old logs (default: 10) |
+| `SPAM_REPORT_ENABLED` | No | Enable daily spam email reports (default: false) |
+| `SPAM_REPORT_RECIPIENT` | No | Email for spam reports (defaults to RECIPIENT_EMAIL) |
 
 ## HTML Form Integration
 
@@ -149,6 +156,63 @@ docker run -p 8080:8080 \
   hugo-contact
 ```
 
+## Spam Logging and Reporting
+
+The application can log detected spam attempts and send daily email reports.
+
+### Enable Spam Logging
+
+Set these environment variables:
+```bash
+SPAM_LOG_ENABLED=true
+SPAM_LOG_DIR=/var/log/hugo-contact  # or your preferred directory
+SPAM_LOG_RETENTION_DAYS=10          # keep logs for 10 days
+```
+
+### Enable Daily Spam Reports
+
+1. **Configure environment variables:**
+   ```bash
+   SPAM_REPORT_ENABLED=true
+   SPAM_REPORT_RECIPIENT=admin@example.com  # optional, uses RECIPIENT_EMAIL if not set
+   ```
+
+2. **Set up the cron job:**
+   ```bash
+   # Add to crontab (runs daily at 9 AM)
+   crontab -e
+   ```
+   
+   Add this line:
+   ```
+   0 9 * * * /path/to/hugo-contact/scripts/send-spam-report.sh >> /var/log/hugo-contact/spam-report-cron.log 2>&1
+   ```
+
+3. **For Docker deployments:**
+   
+   Mount a volume for persistent log storage:
+   ```bash
+   docker run -v /host/path/logs:/var/log/hugo-contact ...
+   ```
+
+### Security Features
+
+- All logged data is HTML-escaped and sanitized
+- Maximum field lengths enforced
+- Automatic log rotation to prevent disk exhaustion
+- No user input is used in file paths
+- JSON encoding prevents injection attacks
+
+### Manual Report Generation
+
+```bash
+# Build the spam report tool
+go build -o bin/spam-report ./cmd/spam-report/main.go
+
+# Run manually
+./bin/spam-report
+```
+
 ## Troubleshooting
 
 ### "Forbidden" error
@@ -159,6 +223,12 @@ Ensure the form-token.js script is loaded before form submission
 
 ### Emails not sending
 Check SMTP credentials and view container logs
+
+### Spam reports not sending
+- Verify `SPAM_REPORT_ENABLED=true` is set
+- Check cron job is configured correctly
+- Review logs in `/var/log/hugo-contact/spam-report-cron.log`
+- Ensure SMTP credentials are accessible to the cron job
 
 ## License
 
